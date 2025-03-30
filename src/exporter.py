@@ -31,6 +31,7 @@ download_speed = Gauge('speedtest_download_bits_per_second',
 upload_speed = Gauge('speedtest_upload_bits_per_second',
                      'Speedtest current Upload speed in bits/s')
 up = Gauge('speedtest_up', 'Speedtest status whether the scrape worked')
+external_ip = Gauge('speedtest_external_ip', 'External IP address used for the test', labelnames=['ip'])
 
 # Cache metrics for how long (seconds)?
 cache_seconds = int(os.environ.get('SPEEDTEST_CACHE_FOR', 0))
@@ -72,11 +73,11 @@ def runTest():
             if len(output) > 0:
                 logging.error('Speedtest CLI Error occurred that' +
                               'was not in JSON format')
-            return (0, 0, 0, 0, 0, 0)
+            return (0, 0, 0, 0, 0, 0, "0.0.0.0")
     except subprocess.TimeoutExpired:
         logging.error('Speedtest CLI process took too long to complete ' +
                       'and was killed.')
-        return (0, 0, 0, 0, 0, 0)
+        return (0, 0, 0, 0, 0, 0, "0.0.0.0")
 
     if is_json(output):
         data = json.loads(output)
@@ -84,7 +85,7 @@ def runTest():
             # Socket error
             print('Something went wrong')
             print(data['error'])
-            return (0, 0, 0, 0, 0, 0)  # Return all data as 0
+            return (0, 0, 0, 0, 0, 0, "0.0.0.0")  # Return all data as 0
         if "type" in data:
             if data['type'] == 'log':
                 print(str(data["timestamp"]) + " - " + str(data["message"]))
@@ -94,8 +95,9 @@ def runTest():
                 actual_ping = data['ping']['latency']
                 download = bytes_to_bits(data['download']['bandwidth'])
                 upload = bytes_to_bits(data['upload']['bandwidth'])
+                external_ip_addr = data.get('interface', {}).get('externalIp', "0.0.0.0")
                 return (actual_server, actual_jitter, actual_ping, download,
-                        upload, 1)
+                        upload, 1, external_ip_addr)
 
 
 @app.route("/metrics")
@@ -103,17 +105,18 @@ def updateResults():
     global cache_until
 
     if datetime.datetime.now() > cache_until:
-        r_server, r_jitter, r_ping, r_download, r_upload, r_status = runTest()
+        r_server, r_jitter, r_ping, r_download, r_upload, r_status, r_ip = runTest()
         server.set(r_server)
         jitter.set(r_jitter)
         ping.set(r_ping)
         download_speed.set(r_download)
         upload_speed.set(r_upload)
         up.set(r_status)
+        external_ip.labels(ip=r_ip).set(1)  # Set the actual IP address as a label
         logging.info("Server=" + str(r_server) + " Jitter=" + str(r_jitter) +
                      "ms" + " Ping=" + str(r_ping) + "ms" + " Download=" +
                      bits_to_megabits(r_download) + " Upload=" +
-                     bits_to_megabits(r_upload))
+                     bits_to_megabits(r_upload) + " IP=" + r_ip)
 
         cache_until = datetime.datetime.now() + datetime.timedelta(
             seconds=cache_seconds)
