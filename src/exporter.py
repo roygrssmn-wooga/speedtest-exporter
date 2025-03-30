@@ -112,7 +112,12 @@ def updateResults():
         download_speed.set(r_download)
         upload_speed.set(r_upload)
         up.set(r_status)
-        external_ip.labels(ip=r_ip).set(1)  # Set the actual IP address as a label
+        
+        # Clear all previous IP metrics
+        external_ip._value.clear()
+        # Set the new IP metric
+        external_ip.labels(ip=r_ip).set(1)
+        
         logging.info("Server=" + str(r_server) + " Jitter=" + str(r_jitter) +
                      "ms" + " Ping=" + str(r_ping) + "ms" + " Download=" +
                      bits_to_megabits(r_download) + " Upload=" +
